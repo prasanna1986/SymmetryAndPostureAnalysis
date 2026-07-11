@@ -1,6 +1,9 @@
 /**
  * Free analysis rules — generic posture/movement evaluation
  * that works for any pose, not tied to a specific test protocol.
+ *
+ * Thresholds are deliberately more lenient than specific test rules
+ * to reduce false positives during general movement.
  */
 
 import type { AssessmentRule } from '../../types';
@@ -14,7 +17,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Alignment',
     metricKey: 'forwardHeadAngle',
     operator: '>',
-    threshold: 10,
+    threshold: 15,
     severity: 'mild',
     message: 'Head appears positioned forward of the shoulder line.',
     coaching: 'Try to align your ears over your shoulders.',
@@ -26,7 +29,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Alignment',
     metricKey: 'forwardHeadAngle',
     operator: '>',
-    threshold: 20,
+    threshold: 30,
     severity: 'moderate',
     message: 'Significant forward head position observed.',
   },
@@ -37,7 +40,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Symmetry',
     metricKey: 'shoulderHeightDiff',
     operator: 'outside',
-    threshold: [-4, 4],
+    threshold: [-6, 6],
     severity: 'mild',
     message: 'Shoulders appear uneven — one side is higher than the other.',
   },
@@ -48,7 +51,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Alignment',
     metricKey: 'trunkLean',
     operator: 'outside',
-    threshold: [-5, 5],
+    threshold: [-8, 8],
     severity: 'mild',
     message: 'Trunk appears to lean to one side.',
     coaching: 'Try to center your weight evenly.',
@@ -60,7 +63,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Symmetry',
     metricKey: 'pelvicTilt',
     operator: 'outside',
-    threshold: [-4, 4],
+    threshold: [-6, 6],
     severity: 'mild',
     message: 'Pelvis appears tilted to one side.',
   },
@@ -71,7 +74,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Alignment',
     metricKey: 'hipShift',
     operator: '>',
-    threshold: 6,
+    threshold: 10,
     severity: 'mild',
     message: 'Hips appear shifted laterally from center.',
   },
@@ -82,7 +85,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Lower Body',
     metricKey: 'leftKneeAngle',
     operator: '>',
-    threshold: 8,
+    threshold: 12,
     severity: 'mild',
     message: 'Left knee appears to deviate inward or outward.',
   },
@@ -93,7 +96,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Lower Body',
     metricKey: 'rightKneeAngle',
     operator: '>',
-    threshold: 8,
+    threshold: 12,
     severity: 'mild',
     message: 'Right knee appears to deviate inward or outward.',
   },
@@ -104,7 +107,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Balance',
     metricKey: 'weightShift',
     operator: '>',
-    threshold: 8,
+    threshold: 12,
     severity: 'mild',
     message: 'Weight appears unevenly distributed between sides.',
   },
@@ -115,7 +118,7 @@ export const freeAnalysisRules: AssessmentRule[] = [
     category: 'Alignment',
     metricKey: 'spinalAlignment',
     operator: '>',
-    threshold: 3,
+    threshold: 5,
     severity: 'mild',
     message: 'Spine appears to deviate from a straight line between head and hips.',
   },

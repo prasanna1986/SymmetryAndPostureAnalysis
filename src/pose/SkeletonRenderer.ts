@@ -1,6 +1,11 @@
 /**
  * SkeletonRenderer — Canvas-based skeleton overlay drawing.
  * Renders joints, bones, and optional labels on a canvas.
+ *
+ * ACCURACY IMPROVEMENTS:
+ * - Bones/joints with visibility 0.55-0.7 are drawn at reduced opacity.
+ * - Below 0.55 (or rejected by anatomical validation), they are not drawn at all.
+ * - This gives the user immediate visual feedback about what the system can see.
  */
 
 import type { NormalizedLandmark } from '../types';
@@ -11,9 +16,6 @@ import {
   KEY_LANDMARKS,
   MIN_VISIBILITY,
   getLandmarkColor,
-  LEFT_COLOR,
-  RIGHT_COLOR,
-  CENTER_COLOR,
 } from './landmarkConstants';
 
 export interface SkeletonRenderOptions {
@@ -31,9 +33,11 @@ export interface SkeletonRenderOptions {
   labelSize?: number;
   /** Overall opacity (0-1) */
   opacity?: number;
+  /** Per-landmark availability flags from the filter pipeline */
+  available?: boolean[];
 }
 
-const DEFAULT_OPTIONS: Required<SkeletonRenderOptions> = {
+const DEFAULT_OPTIONS: Required<Omit<SkeletonRenderOptions, 'available'>> & { available?: boolean[] } = {
   showJoints: true,
   showBones: true,
   showLabels: false,
@@ -41,7 +45,30 @@ const DEFAULT_OPTIONS: Required<SkeletonRenderOptions> = {
   boneWidth: 2.5,
   labelSize: 10,
   opacity: 1,
+  available: undefined,
 };
+
+/**
+ * Map landmark visibility to a rendering opacity.
+ * - visibility >= 0.75: full opacity (1.0)
+ * - visibility 0.55-0.75: partial opacity (0.3-0.8)
+ * - visibility < 0.55: hidden (0.0)
+ *
+ * If the `available` array is provided and marks this landmark as unavailable
+ * (e.g., rejected by anatomical validation), opacity is 0.
+ */
+function landmarkOpacity(
+  visibility: number,
+  index: number,
+  available?: boolean[]
+): number {
+  if (available && !available[index]) return 0;
+  if (visibility < MIN_VISIBILITY) return 0;
+  if (visibility >= 0.75) return 1.0;
+  // Linear interpolation between 0.3 and 0.8 for visibility 0.55-0.75
+  const t = (visibility - MIN_VISIBILITY) / (0.75 - MIN_VISIBILITY);
+  return 0.3 + t * 0.5;
+}
 
 /**
  * Renders a skeleton overlay on a canvas element.
@@ -107,14 +134,23 @@ export class SkeletonRenderer {
     landmarks: NormalizedLandmark[],
     w: number,
     h: number,
-    opts: Required<SkeletonRenderOptions>
+    opts: typeof DEFAULT_OPTIONS
   ): void {
     for (const [startIdx, endIdx] of SKELETON_CONNECTIONS) {
       const start = landmarks[startIdx];
       const end = landmarks[endIdx];
 
       if (!start || !end) continue;
-      if (start.visibility < MIN_VISIBILITY || end.visibility < MIN_VISIBILITY) continue;
+
+      // Compute opacity for each endpoint
+      const startOpacity = landmarkOpacity(start.visibility, startIdx, opts.available);
+      const endOpacity = landmarkOpacity(end.visibility, endIdx, opts.available);
+
+      // Skip bone entirely if either endpoint is invisible
+      if (startOpacity <= 0 || endOpacity <= 0) continue;
+
+      // Use the minimum opacity of both endpoints
+      const boneOpacity = Math.min(startOpacity, endOpacity);
 
       const x1 = start.x * w;
       const y1 = start.y * h;
@@ -124,6 +160,9 @@ export class SkeletonRenderer {
       // Gradient bone color based on which side
       const color1 = getLandmarkColor(startIdx);
       const color2 = getLandmarkColor(endIdx);
+
+      this.ctx.save();
+      this.ctx.globalAlpha = boneOpacity * opts.opacity;
 
       this.ctx.beginPath();
       this.ctx.moveTo(x1, y1);
@@ -141,6 +180,8 @@ export class SkeletonRenderer {
       this.ctx.lineWidth = opts.boneWidth;
       this.ctx.lineCap = 'round';
       this.ctx.stroke();
+
+      this.ctx.restore();
     }
   }
 
@@ -148,19 +189,23 @@ export class SkeletonRenderer {
     landmarks: NormalizedLandmark[],
     w: number,
     h: number,
-    opts: Required<SkeletonRenderOptions>
+    opts: typeof DEFAULT_OPTIONS
   ): void {
     landmarks.forEach((lm, index) => {
-      if (lm.visibility < MIN_VISIBILITY) return;
+      const opacity = landmarkOpacity(lm.visibility, index, opts.available);
+      if (opacity <= 0) return;
 
       const x = lm.x * w;
       const y = lm.y * h;
       const color = getLandmarkColor(index as LandmarkIndex);
 
+      this.ctx.save();
+      this.ctx.globalAlpha = opacity * opts.opacity;
+
       // Outer glow
       this.ctx.beginPath();
       this.ctx.arc(x, y, opts.jointRadius + 2, 0, Math.PI * 2);
-      this.ctx.fillStyle = color + '30'; // 30 = ~19% opacity hex
+      this.ctx.fillStyle = color + '30';
       this.ctx.fill();
 
       // Inner solid
@@ -174,6 +219,8 @@ export class SkeletonRenderer {
       this.ctx.arc(x, y, opts.jointRadius * 0.4, 0, Math.PI * 2);
       this.ctx.fillStyle = '#ffffff';
       this.ctx.fill();
+
+      this.ctx.restore();
     });
   }
 
@@ -181,20 +228,26 @@ export class SkeletonRenderer {
     landmarks: NormalizedLandmark[],
     w: number,
     h: number,
-    opts: Required<SkeletonRenderOptions>
+    opts: typeof DEFAULT_OPTIONS
   ): void {
     this.ctx.font = `${opts.labelSize}px Inter, sans-serif`;
     this.ctx.textAlign = 'left';
 
     for (const index of KEY_LANDMARKS) {
       const lm = landmarks[index];
-      if (!lm || lm.visibility < MIN_VISIBILITY) continue;
+      if (!lm) continue;
+
+      const opacity = landmarkOpacity(lm.visibility, index, opts.available);
+      if (opacity <= 0) continue;
 
       const label = LANDMARK_LABELS[index];
       if (!label) continue;
 
       const x = lm.x * w + opts.jointRadius + 4;
       const y = lm.y * h + opts.labelSize * 0.35;
+
+      this.ctx.save();
+      this.ctx.globalAlpha = opacity * opts.opacity;
 
       // Background
       const metrics = this.ctx.measureText(label);
@@ -210,6 +263,8 @@ export class SkeletonRenderer {
       // Text
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
       this.ctx.fillText(label, x, y);
+
+      this.ctx.restore();
     }
   }
 }

@@ -2,11 +2,16 @@
  * Main pose detection loop hook.
  * Only runs assessment scoring during the 'recording' phase.
  * Runs readiness checks during 'preparing' phase.
+ *
+ * ACCURACY PIPELINE:
+ *   Raw MediaPipe → LandmarkFilter (smooth + validate + gate) → Metrics → Rules → Findings
  */
 
 import { useCallback, useEffect, useRef } from 'react';
 import { poseDetector } from '../pose/PoseDetector';
 import { SkeletonRenderer } from '../pose/SkeletonRenderer';
+import { landmarkFilter } from '../pose/landmarkFilter';
+import type { FilteredLandmarks } from '../pose/landmarkFilter';
 import { usePoseStore } from '../stores/poseStore';
 import { useCameraStore } from '../stores/cameraStore';
 import { useAssessmentStore } from '../stores/assessmentStore';
@@ -39,6 +44,9 @@ export function usePoseLoop({
   // Accumulator for averaging metrics during recording
   const metricsAccumRef = useRef<PostureMetrics[]>([]);
 
+  // Store the latest filtered result for UI access
+  const filteredRef = useRef<FilteredLandmarks | null>(null);
+
   const isStreaming = useCameraStore((s) => s.isStreaming);
   const {
     setLandmarks, setWorldLandmarks, setConfidence, setDetecting,
@@ -65,12 +73,25 @@ export function usePoseLoop({
     return () => { cancelled = true; };
   }, [setInitialized, setLoading, setError]);
 
-  // Reset accumulator when status changes to recording
+  // Reset accumulator and filter when status changes to recording
   useEffect(() => {
     if (status === 'recording') {
       metricsAccumRef.current = [];
     }
   }, [status]);
+
+  // Configure landmark filter mode based on active test
+  useEffect(() => {
+    const dynamicTests = new Set(['squat', 'overhead_reach', 'forward_bend', 'free_analysis', 'exercise_form']);
+    landmarkFilter.setMode(dynamicTests.has(activeTest));
+  }, [activeTest]);
+
+  // Reset filter when camera starts/stops
+  useEffect(() => {
+    if (isStreaming) {
+      landmarkFilter.reset();
+    }
+  }, [isStreaming]);
 
   const detect = useCallback(() => {
     const video = videoRef.current;
@@ -89,16 +110,30 @@ export function usePoseLoop({
     const result = poseDetector.detectForVideo(video, performance.now());
 
     if (result) {
-      const { landmarks, worldLandmarks } = result;
+      const { landmarks: rawLandmarks, worldLandmarks } = result;
+
+      // ── ACCURACY PIPELINE: Filter raw landmarks ──
+      const filtered = landmarkFilter.process(rawLandmarks);
+      filteredRef.current = filtered;
+      const { landmarks, available, bodyVisibility } = filtered;
+
       setLandmarks(landmarks);
       setWorldLandmarks(worldLandmarks);
 
-      const avgConf = landmarks.reduce((sum, l) => sum + l.visibility, 0) / landmarks.length;
+      // Confidence uses only available landmarks
+      const availableLandmarks = landmarks.filter((_, i) => available[i]);
+      const avgConf = availableLandmarks.length > 0
+        ? availableLandmarks.reduce((sum, l) => sum + l.visibility, 0) / availableLandmarks.length
+        : 0;
       setConfidence(avgConf);
 
-      // Skeleton color changes based on status
-      const boneColor = status === 'recording' ? '#00e676' : status === 'preparing' ? '#ffab00' : undefined;
-      rendererRef.current.render(landmarks, { showLabels, showJoints: true, showBones: true });
+      // ── Render skeleton with availability info ──
+      rendererRef.current.render(landmarks, {
+        showLabels,
+        showJoints: true,
+        showBones: true,
+        available,
+      });
 
       // FPS
       fpsCountRef.current++;
@@ -120,8 +155,15 @@ export function usePoseLoop({
         frameCountRef.current++;
         incrementFrameCount();
 
+        // Skip assessment if too few body segments are visible
+        if (bodyVisibility.visibleCount < 3) {
+          // Not enough of the body visible — skip this frame
+          animFrameRef.current = requestAnimationFrame(detect);
+          return;
+        }
+
         try {
-          const metrics = computePostureMetrics(landmarks);
+          const metrics = computePostureMetrics(landmarks, available);
           metricsAccumRef.current.push(metrics);
           setPostureMetrics(metrics);
 
@@ -132,16 +174,15 @@ export function usePoseLoop({
             if (activeTest === 'standing_posture') {
               assessment = runPostureAssessment(avgMetrics);
             } else if (activeTest === 'squat') {
-              const sq = computeSquatMetrics(landmarks);
+              const sq = computeSquatMetrics(landmarks, available);
               assessment = runAssessment('squat', sq as unknown as Record<string, number>, metrics.confidence, metrics.symmetryScore);
             } else if (activeTest === 'overhead_reach') {
-              const or = computeOverheadReachMetrics(landmarks);
+              const or = computeOverheadReachMetrics(landmarks, available);
               assessment = runAssessment('overhead_reach', or as unknown as Record<string, number>, metrics.confidence, metrics.symmetryScore);
             } else if (activeTest === 'forward_bend') {
-              const fb = computeForwardBendMetrics(landmarks);
+              const fb = computeForwardBendMetrics(landmarks, available);
               assessment = runAssessment('forward_bend', fb as unknown as Record<string, number>, metrics.confidence, metrics.symmetryScore);
             } else if (activeTest === 'free_analysis' || activeTest === 'exercise_form') {
-              // Generic: run posture metrics through the free_analysis rules
               const measurements: Record<string, number> = {
                 forwardHeadAngle: avgMetrics.forwardHeadAngle,
                 shoulderHeightDiff: avgMetrics.shoulderHeightDiff,
@@ -174,11 +215,10 @@ export function usePoseLoop({
 
       // --- IDLE: just show skeleton, no scoring ---
       if (status === 'idle') {
-        // Show live posture metrics as preview (non-scored)
         frameCountRef.current++;
         if (frameCountRef.current % 30 === 0) {
           try {
-            const metrics = computePostureMetrics(landmarks);
+            const metrics = computePostureMetrics(landmarks, available);
             setPostureMetrics(metrics);
           } catch {
             // skip
@@ -206,29 +246,40 @@ export function usePoseLoop({
     };
   }, [isStreaming, detect, setDetecting]);
 
-  return { isReady: poseDetector.isReady };
+  // Expose filtered result and filter instance for UI components
+  return {
+    isReady: poseDetector.isReady,
+    getFilteredResult: () => filteredRef.current,
+  };
 }
 
-/** Average a list of PostureMetrics into one smoothed result */
+/** Average a list of PostureMetrics into one smoothed result, handling NaN values */
 function averageMetrics(list: PostureMetrics[]): PostureMetrics {
   if (list.length === 0) throw new Error('No metrics to average');
   if (list.length === 1) return list[0];
 
   const n = list.length;
-  const sum = (key: keyof PostureMetrics) => {
+
+  /** Average only non-NaN values for a given key */
+  const sum = (key: keyof PostureMetrics): number => {
     let total = 0;
+    let count = 0;
     for (const m of list) {
       const v = m[key];
-      if (typeof v === 'number') total += v;
+      if (typeof v === 'number' && !isNaN(v)) {
+        total += v;
+        count++;
+      }
     }
-    return total / n;
+    return count > 0 ? total / count : NaN;
   };
 
   // Average confidence map
   const confKeys = Object.keys(list[0].confidence);
   const avgConf: Record<string, number> = {};
   for (const k of confKeys) {
-    avgConf[k] = list.reduce((s, m) => s + (m.confidence[k] ?? 0), 0) / n;
+    const vals = list.map((m) => m.confidence[k] ?? 0).filter((v) => v > 0);
+    avgConf[k] = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
   }
 
   return {

@@ -200,7 +200,7 @@ export const knowledgeBase: KnowledgeEntry[] = [
     id: 'forward-head',
     name: 'Forward Head Posture',
     description: 'The head is positioned anterior to the shoulder line, increasing cervical spine load.',
-    criteria: [{ metricKey: 'forwardHeadAngle', minValue: 8 }],
+    criteria: [{ metricKey: 'forwardHeadAngle', minValue: 12 }],
     recommendations: {
       mobility: [exercises.chinTucks, exercises.catCow],
       strength: [exercises.bandPullApart, exercises.deadBug],
@@ -220,7 +220,7 @@ export const knowledgeBase: KnowledgeEntry[] = [
     id: 'rounded-shoulders',
     name: 'Rounded Shoulders',
     description: 'Shoulders are rotated forward, indicating tight chest muscles and weak upper back.',
-    criteria: [{ metricKey: 'shoulderRotation', minValue: 5 }],
+    criteria: [{ metricKey: 'shoulderRotation', minValue: 8 }],
     recommendations: {
       mobility: [exercises.doorwayStretch, exercises.wallAngels],
       strength: [exercises.bandPullApart],
@@ -238,7 +238,7 @@ export const knowledgeBase: KnowledgeEntry[] = [
     id: 'shoulder-elevation',
     name: 'Shoulder Height Asymmetry',
     description: 'One shoulder sits higher than the other, possibly from muscle imbalance or habitual posture.',
-    criteria: [{ metricKey: 'shoulderHeightDiff', minValue: 3 }],
+    criteria: [{ metricKey: 'shoulderHeightDiff', minValue: 4 }],
     recommendations: {
       mobility: [exercises.doorwayStretch],
       strength: [exercises.bandPullApart],
@@ -256,7 +256,7 @@ export const knowledgeBase: KnowledgeEntry[] = [
     id: 'pelvic-tilt-lateral',
     name: 'Lateral Pelvic Tilt',
     description: 'The pelvis is tilted to one side, which can affect the entire kinetic chain.',
-    criteria: [{ metricKey: 'pelvicTilt', minValue: 3 }],
+    criteria: [{ metricKey: 'pelvicTilt', minValue: 4 }],
     recommendations: {
       mobility: [exercises.hipFlexorStretch, exercises.catCow],
       strength: [exercises.clamshells, exercises.gluteBridge, exercises.lateralBandWalk],
@@ -275,8 +275,8 @@ export const knowledgeBase: KnowledgeEntry[] = [
     name: 'Knee Valgus',
     description: 'Knees collapse inward, often due to weak hip external rotators or tight adductors.',
     criteria: [
-      { metricKey: 'leftKneeAngle', minValue: 5 },
-      { metricKey: 'rightKneeAngle', minValue: 5 },
+      { metricKey: 'leftKneeAngle', minValue: 8 },
+      { metricKey: 'rightKneeAngle', minValue: 8 },
     ],
     recommendations: {
       mobility: [exercises.hipFlexorStretch],
@@ -295,7 +295,7 @@ export const knowledgeBase: KnowledgeEntry[] = [
     id: 'trunk-lean',
     name: 'Trunk Lean',
     description: 'The trunk leans to one side during standing, indicating lateral muscle imbalance.',
-    criteria: [{ metricKey: 'trunkLean', minValue: 4 }],
+    criteria: [{ metricKey: 'trunkLean', minValue: 5 }],
     recommendations: {
       mobility: [exercises.catCow],
       strength: [exercises.deadBug],

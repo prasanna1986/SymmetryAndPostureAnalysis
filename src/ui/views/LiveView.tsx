@@ -57,7 +57,26 @@ export const LiveView: React.FC = () => {
     }
   }, [isStreaming, resetAssessment]);
 
-  usePoseLoop({ videoRef, canvasRef, showLabels: false, assessmentInterval: 8 });
+  const { getFilteredResult } = usePoseLoop({ videoRef, canvasRef, showLabels: false, assessmentInterval: 8 });
+
+  // Body visibility state (updated from filtered result)
+  const [bodySummary, setBodySummary] = useState('Waiting for camera...');
+  const [bodySegCount, setBodySegCount] = useState(0);
+  useEffect(() => {
+    if (!isStreaming) {
+      setBodySummary('Waiting for camera...');
+      setBodySegCount(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      const filtered = getFilteredResult();
+      if (filtered) {
+        setBodySummary(filtered.bodyVisibility.summary);
+        setBodySegCount(filtered.bodyVisibility.visibleCount);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isStreaming, getFilteredResult]);
 
   useEffect(() => {
     return () => {
@@ -289,7 +308,24 @@ export const LiveView: React.FC = () => {
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {isLoading && (
           <div className="glass-card-static animate-fade-in" style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.8125rem', color: 'var(--color-accent-cyan)' }}>
-            <span className="animate-spin" style={{ display: 'inline-block' }}>⏳</span> Loading pose detection model...
+            <span className="animate-spin" style={{ display: 'inline-block' }}>⏳</span> Loading pose detection model (full accuracy)...
+          </div>
+        )}
+
+        {/* Body visibility indicator */}
+        {isStreaming && (
+          <div style={{
+            padding: '0.375rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem',
+            background: bodySegCount >= 8 ? 'rgba(0,230,118,0.08)' : bodySegCount >= 4 ? 'rgba(255,171,0,0.08)' : 'rgba(255,82,82,0.08)',
+            border: `1px solid ${bodySegCount >= 8 ? 'rgba(0,230,118,0.25)' : bodySegCount >= 4 ? 'rgba(255,171,0,0.25)' : 'rgba(255,82,82,0.25)'}`,
+            borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 500,
+            color: bodySegCount >= 8 ? 'var(--color-accent-emerald)' : bodySegCount >= 4 ? 'var(--color-accent-amber)' : 'var(--color-severity-significant)',
+          }}>
+            <span>{bodySegCount >= 8 ? '🟢' : bodySegCount >= 4 ? '🟡' : '🔴'}</span>
+            <span>{bodySummary}</span>
+            <span style={{ marginLeft: 'auto', opacity: 0.7, fontSize: '0.6875rem' }}>
+              {bodySegCount}/9 segments
+            </span>
           </div>
         )}
 
